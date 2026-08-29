@@ -15,3 +15,12 @@ spring:
     properties:
       hibernate:
         format_sql: true
+
+judge0:
+  base-url: https://ce.judge0.com
+
+judge:
+  workers: 4
+  queue-capacity: 1000
+  poll-delay-ms: 1000
+  poll-timeout-ms: 30000
