@@ -25,8 +25,8 @@ public class ProblemService {
     private final ContestRepository contestRepository;
 
     public ProblemService(ProblemRepository problemRepository,
-                          ContestProblemRepository contestProblemRepository,
-                          ContestRepository contestRepository) {
+            ContestProblemRepository contestProblemRepository,
+            ContestRepository contestRepository) {
         this.problemRepository = problemRepository;
         this.contestProblemRepository = contestProblemRepository;
         this.contestRepository = contestRepository;
@@ -68,7 +68,7 @@ public class ProblemService {
         problem.setInputFormat(request.getInputFormat());
         problem.setOutputFormat(request.getOutputFormat());
         problem.setDifficulty(request.getDifficulty());
-        
+
         Problem updated = problemRepository.save(problem);
         return mapToResponse(updated);
     }
@@ -85,7 +85,8 @@ public class ProblemService {
             throw new ResourceNotFoundException("Contest not found with id: " + contestId);
         }
         Problem problem = problemRepository.findById(request.getProblemId())
-                .orElseThrow(() -> new ResourceNotFoundException("Problem not found with id: " + request.getProblemId()));
+                .orElseThrow(
+                        () -> new ResourceNotFoundException("Problem not found with id: " + request.getProblemId()));
 
         if (contestProblemRepository.existsByContestIdAndProblemId(contestId, request.getProblemId())) {
             throw new IllegalArgumentException("Problem is already associated with this contest");
@@ -135,7 +136,8 @@ public class ProblemService {
                 .build();
     }
 
-    private ContestProblemResponse mapToContestProblemResponse(ContestProblem mapping, String title, String difficulty) {
+    private ContestProblemResponse mapToContestProblemResponse(ContestProblem mapping, String title,
+            String difficulty) {
         return ContestProblemResponse.builder()
                 .id(mapping.getId())
                 .contestId(mapping.getContestId())
