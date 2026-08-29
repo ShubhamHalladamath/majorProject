@@ -7,62 +7,75 @@ import org.springframework.web.bind.annotation.*;
 import shub.smartContest.dto.SubmissionResultResponse;
 import shub.smartContest.dto.SubmitRequest;
 import shub.smartContest.dto.SubmitResponse;
-import shub.smartContest.entity.TestCase;
 import shub.smartContest.exception.ResourceNotFoundException;
 import shub.smartContest.exception.SystemBusyException;
-import shub.smartContest.repository.TestCaseRepository;
 import shub.smartContest.service.SubmissionResultService;
 import shub.smartContest.service.SubmissionService;
 
 import java.util.List;
+
+
+import org.springframework.security.core.context.SecurityContextHolder;
+import shub.smartContest.security.SecurityUser;
+import shub.smartContest.entity.Role;
+
+import shub.smartContest.repository.UserRepository;
+import shub.smartContest.entity.User;
 
 @RestController
 @RequestMapping("/api/submissions")
 @Slf4j
 public class SubmissionController {
 
-
     private final SubmissionService submissionService;
     private final SubmissionResultService submissionResultService;
-    private final TestCaseRepository testCaseRepository;
+    private final UserRepository userRepository;
 
     public SubmissionController(SubmissionService submissionService,
                                 SubmissionResultService submissionResultService,
-                                TestCaseRepository testCaseRepository) {
+                                UserRepository userRepository) {
         this.submissionService = submissionService;
         this.submissionResultService = submissionResultService;
-        this.testCaseRepository = testCaseRepository;
+        this.userRepository = userRepository;
     }
 
     @PostMapping
     public ResponseEntity<SubmitResponse> submitCode(@RequestBody SubmitRequest request) {
-        SubmitResponse response = submissionService.submitCode(request);
+        User user = getAuthenticatedUser();
+        SubmitResponse response = submissionService.submitCode(request, user.getId());
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+    }
+
+    @GetMapping("/my")
+    public ResponseEntity<List<SubmissionResultResponse>> getMySubmissions() {
+        User user = getAuthenticatedUser();
+        List<SubmissionResultResponse> response = submissionResultService.getMySubmissions(user.getId());
+        return ResponseEntity.ok(response);
     }
 
     @GetMapping("/{id}")
     public ResponseEntity<SubmissionResultResponse> getSubmissionResult(@PathVariable Long id) {
-        SubmissionResultResponse response = submissionResultService.getSubmissionResult(id);
+        User user = getAuthenticatedUser();
+        boolean isAdmin = user.getRole() == Role.ADMIN;
+        SubmissionResultResponse response = submissionResultService.getSubmissionResult(id, user.getId(), isAdmin);
         return ResponseEntity.ok(response);
     }
 
-    @PostMapping("/test-case")
-    public ResponseEntity<TestCase> createTestCase(@RequestBody TestCase testCase) {
-        TestCase saved = testCaseRepository.save(testCase);
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+    private User getAuthenticatedUser() {
+        Object principal = SecurityContextHolder.getContext().getAuthentication().getPrincipal();
+        if (principal instanceof SecurityUser) {
+            return ((SecurityUser) principal).getUser();
+        }
+        String username;
+        if (principal instanceof org.springframework.security.core.userdetails.UserDetails) {
+            username = ((org.springframework.security.core.userdetails.UserDetails) principal).getUsername();
+        } else {
+            username = principal.toString();
+        }
+        return userRepository.findByUsername(username)
+                .orElseThrow(() -> new shub.smartContest.exception.ResourceNotFoundException("User not found: " + username));
     }
 
-    @PostMapping("/test-cases/batch")
-    public ResponseEntity<List<TestCase>> createTestCasesBatch(@RequestBody List<TestCase> testCases) {
-        List<TestCase> saved = testCaseRepository.saveAll(testCases);
-        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
-    }
-
-    @GetMapping("/test-cases/{problemId}")
-    public ResponseEntity<List<TestCase>> getTestCases(@PathVariable Long problemId) {
-        List<TestCase> testCases = testCaseRepository.findByProblemId(problemId);
-        return ResponseEntity.ok(testCases);
-    }
 
     @ExceptionHandler(SystemBusyException.class)
     public ResponseEntity<SubmitResponse> handleSystemBusy(SystemBusyException ex) {
@@ -78,3 +91,4 @@ public class SubmissionController {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(ex.getMessage());
     }
 }
+

@@ -21,6 +21,7 @@ public class RoundRobinWorkerManager {
     private final SubmissionRepository submissionRepository;
     private final TestCaseRepository testCaseRepository;
     private final SubmissionTestResultRepository submissionTestResultRepository;
+    private final ContestProblemRepository contestProblemRepository;
     private final Judge0Service judge0Service;
 
     private ExecutorService executorService;
@@ -30,12 +31,14 @@ public class RoundRobinWorkerManager {
                                    SubmissionRepository submissionRepository,
                                    TestCaseRepository testCaseRepository,
                                    SubmissionTestResultRepository submissionTestResultRepository,
+                                   ContestProblemRepository contestProblemRepository,
                                    Judge0Service judge0Service) {
         this.workerConfig = workerConfig;
         this.queueManager = queueManager;
         this.submissionRepository = submissionRepository;
         this.testCaseRepository = testCaseRepository;
         this.submissionTestResultRepository = submissionTestResultRepository;
+        this.contestProblemRepository = contestProblemRepository;
         this.judge0Service = judge0Service;
     }
 
@@ -52,12 +55,14 @@ public class RoundRobinWorkerManager {
                     submissionRepository,
                     testCaseRepository,
                     submissionTestResultRepository,
+                    contestProblemRepository,
                     judge0Service,
                     workerConfig
             );
             executorService.submit(worker);
         }
     }
+
 
     @PreDestroy
     public void stopWorkers() {

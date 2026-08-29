@@ -11,10 +11,8 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate:
-        format_sql: true
+    show-sql: false
+
 
 judge0:
   base-url: https://ce.judge0.com

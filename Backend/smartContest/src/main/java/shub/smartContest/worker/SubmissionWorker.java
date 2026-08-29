@@ -22,6 +22,7 @@ public class SubmissionWorker implements Runnable {
     private final SubmissionRepository submissionRepository;
     private final TestCaseRepository testCaseRepository;
     private final SubmissionTestResultRepository submissionTestResultRepository;
+    private final ContestProblemRepository contestProblemRepository;
     private final Judge0Service judge0Service;
     private final WorkerConfig workerConfig;
 
@@ -30,6 +31,7 @@ public class SubmissionWorker implements Runnable {
                             SubmissionRepository submissionRepository,
                             TestCaseRepository testCaseRepository,
                             SubmissionTestResultRepository submissionTestResultRepository,
+                            ContestProblemRepository contestProblemRepository,
                             Judge0Service judge0Service,
                             WorkerConfig workerConfig) {
         this.workerId = workerId;
@@ -37,9 +39,11 @@ public class SubmissionWorker implements Runnable {
         this.submissionRepository = submissionRepository;
         this.testCaseRepository = testCaseRepository;
         this.submissionTestResultRepository = submissionTestResultRepository;
+        this.contestProblemRepository = contestProblemRepository;
         this.judge0Service = judge0Service;
         this.workerConfig = workerConfig;
     }
+
 
     @Override
     public void run() {
@@ -229,11 +233,20 @@ public class SubmissionWorker implements Runnable {
         }
 
         // Calculate score
-        int score = (passed * 100) / total;
+        int maxPoints = 100;
+        Submission submission = submissionRepository.findById(job.submissionId()).orElse(null);
+        if (submission != null && submission.getContestId() != null) {
+            Optional<ContestProblem> cp = contestProblemRepository.findByContestIdAndProblemId(submission.getContestId(), submission.getProblemId());
+            if (cp.isPresent()) {
+                maxPoints = cp.get().getPoints();
+            }
+        }
+        int score = (passed * maxPoints) / total;
 
         updateStatus(job.submissionId(), overallStatus, passed, total, score, compilerOutput);
         log.info("Job {} processed. Result: {}, Score: {} ({} of {})",
                 job.submissionId(), overallStatus, score, passed, total);
+
     }
 
     private void updateStatus(Long submissionId, SubmissionStatus status, int passed, int total, int score, String compilerOutput) {

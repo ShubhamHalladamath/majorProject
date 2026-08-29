@@ -5,29 +5,71 @@ import org.springframework.transaction.annotation.Transactional;
 import shub.smartContest.dto.SubmissionJob;
 import shub.smartContest.dto.SubmitRequest;
 import shub.smartContest.dto.SubmitResponse;
-import shub.smartContest.entity.Submission;
-import shub.smartContest.entity.SubmissionStatus;
-import shub.smartContest.exception.SystemBusyException;
+import shub.smartContest.entity.*;
+import shub.smartContest.exception.*;
 import shub.smartContest.queue.SubmissionQueueManager;
-import shub.smartContest.repository.SubmissionRepository;
+import shub.smartContest.repository.*;
+
+import java.util.Optional;
 
 @Service
 public class SubmissionService {
 
+
     private final SubmissionRepository submissionRepository;
     private final SubmissionQueueManager queueManager;
+    private final ContestRepository contestRepository;
+    private final ContestParticipantRepository contestParticipantRepository;
+    private final ContestProblemRepository contestProblemRepository;
+    private final ContestService contestService;
 
     public SubmissionService(SubmissionRepository submissionRepository,
-                             SubmissionQueueManager queueManager) {
+                             SubmissionQueueManager queueManager,
+                             ContestRepository contestRepository,
+                             ContestParticipantRepository contestParticipantRepository,
+                             ContestProblemRepository contestProblemRepository,
+                             ContestService contestService) {
         this.submissionRepository = submissionRepository;
         this.queueManager = queueManager;
+        this.contestRepository = contestRepository;
+        this.contestParticipantRepository = contestParticipantRepository;
+        this.contestProblemRepository = contestProblemRepository;
+        this.contestService = contestService;
     }
 
     @Transactional
-    public SubmitResponse submitCode(SubmitRequest request) {
-        // 1. Create and save submission as QUEUED
+    public SubmitResponse submitCode(SubmitRequest request, Long userId) {
+        if (request.getContestId() == null) {
+            throw new IllegalArgumentException("Contest ID must be specified");
+        }
+
+        // 1. Validate contest
+        Contest contest = contestRepository.findById(request.getContestId())
+                .orElseThrow(() -> new ResourceNotFoundException("Contest not found with id: " + request.getContestId()));
+
+        contest = contestService.checkAndBuildContestStatus(contest);
+        if (contest.getStatus() != ContestStatus.LIVE) {
+            throw new ContestNotActiveException("Submissions are only allowed when the contest is LIVE. Current status: " + contest.getStatus());
+        }
+
+        // 2. Validate enrollment and start state
+        ContestParticipant participant = contestParticipantRepository.findByContestIdAndUserId(request.getContestId(), userId)
+                .orElseThrow(() -> new UnauthorizedException("You are not enrolled in this contest"));
+
+        if (participant.getStatus() != ContestParticipantStatus.STARTED) {
+            throw new UnauthorizedException("You must start the contest before submitting solutions");
+        }
+
+        // 3. Validate problem belongs to contest
+        if (!contestProblemRepository.existsByContestIdAndProblemId(request.getContestId(), request.getProblemId())) {
+            throw new IllegalArgumentException("Problem does not belong to this contest");
+        }
+
+        // 4. Create and save submission as QUEUED
         Submission submission = Submission.builder()
                 .problemId(request.getProblemId())
+                .userId(userId)
+                .contestId(request.getContestId())
                 .sourceCode(request.getSourceCode())
                 .languageId(request.getLanguageId())
                 .status(SubmissionStatus.QUEUED)
@@ -38,7 +80,7 @@ public class SubmissionService {
 
         submission = submissionRepository.save(submission);
 
-        // 2. Put submission job into the queue manager
+        // 5. Put submission job into the queue manager
         SubmissionJob job = new SubmissionJob(
                 submission.getId(),
                 submission.getProblemId(),
@@ -48,7 +90,6 @@ public class SubmissionService {
 
         boolean enqueued = queueManager.enqueue(job);
         if (!enqueued) {
-            // Throw exception to trigger transactional rollback
             throw new SystemBusyException("Too many submissions are currently queued.");
         }
 
@@ -58,3 +99,4 @@ public class SubmissionService {
                 .build();
     }
 }
+

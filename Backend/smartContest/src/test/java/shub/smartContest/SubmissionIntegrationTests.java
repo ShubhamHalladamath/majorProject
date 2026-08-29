@@ -8,25 +8,20 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.security.test.context.support.WithMockUser;
+import shub.smartContest.admin.AdminTestCaseController;
 import shub.smartContest.config.WorkerConfig;
 import shub.smartContest.controller.SubmissionController;
 import shub.smartContest.dto.*;
-import shub.smartContest.entity.Submission;
-import shub.smartContest.entity.SubmissionStatus;
 import shub.smartContest.entity.TestCase;
-import shub.smartContest.exception.SystemBusyException;
 import shub.smartContest.queue.SubmissionQueueManager;
-import shub.smartContest.repository.SubmissionRepository;
-import shub.smartContest.repository.TestCaseRepository;
+import shub.smartContest.repository.*;
 import shub.smartContest.service.Judge0Service;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.anyList;
-import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -36,23 +31,41 @@ public class SubmissionIntegrationTests {
     private SubmissionController submissionController;
 
     @Autowired
+    private AdminTestCaseController adminTestCaseController;
+
+    @Autowired
     private TestCaseRepository testCaseRepository;
 
     @Autowired
     private SubmissionRepository submissionRepository;
+
+    @Autowired
+    private ContestRepository contestRepository;
+
+    @Autowired
+    private ContestParticipantRepository contestParticipantRepository;
+
+    @Autowired
+    private ContestProblemRepository contestProblemRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     @MockitoBean
     private Judge0Service judge0Service;
 
     @BeforeEach
     void setup() {
-        testCaseRepository.deleteAll();
         submissionRepository.deleteAll();
+        testCaseRepository.deleteAll();
+        contestParticipantRepository.deleteAll();
+        contestProblemRepository.deleteAll();
+        contestRepository.deleteAll();
+        userRepository.deleteAll();
     }
 
     @Test
     void testRoundRobinRoutingLogic() {
-        // Setup queue manager with 4 workers and 8 capacity
         WorkerConfig config = new WorkerConfig();
         config.setWorkers(4);
         config.setQueueCapacity(8);
@@ -77,29 +90,61 @@ public class SubmissionIntegrationTests {
             assertNotNull(second);
             assertEquals((long) (i + 4), second.submissionId());
         }
-
     }
 
     @Test
     void testQueueBackpressure() {
-        // Set queue capacity to small
         WorkerConfig config = new WorkerConfig();
         config.setWorkers(2);
-        config.setQueueCapacity(2); // 1 job per queue
+        config.setQueueCapacity(2);
         SubmissionQueueManager manager = new SubmissionQueueManager(config);
         manager.init();
 
-        // Enqueue 2 jobs successfully
         assertTrue(manager.enqueue(new SubmissionJob(1L, 10L, "code", 62)));
         assertTrue(manager.enqueue(new SubmissionJob(2L, 10L, "code", 62)));
-
-        // 3rd job should fail to enqueue because it goes to worker 0 whose queue is full (size 1)
         assertFalse(manager.enqueue(new SubmissionJob(3L, 10L, "code", 62)));
     }
 
     @Test
+    @WithMockUser(username = "testuser", roles = "USER")
     void testSubmitCodeSuccessfullyQueued() {
-        // Create a testcase
+        shub.smartContest.entity.User user = shub.smartContest.entity.User.builder()
+                .username("testuser")
+                .email("testuser@example.com")
+                .password("password")
+                .role(shub.smartContest.entity.Role.USER)
+                .enabled(true)
+                .build();
+        user = userRepository.save(user);
+
+        shub.smartContest.entity.Contest contest = shub.smartContest.entity.Contest.builder()
+                .title("Test Contest")
+                .description("Desc")
+                .startTime(java.time.LocalDateTime.now().minusHours(1))
+                .endTime(java.time.LocalDateTime.now().plusHours(2))
+                .status(shub.smartContest.entity.ContestStatus.LIVE)
+                .createdBy(1L)
+                .duration(120)
+                .build();
+        contest = contestRepository.save(contest);
+
+        shub.smartContest.entity.ContestProblem contestProblem = shub.smartContest.entity.ContestProblem.builder()
+                .contestId(contest.getId())
+                .problemId(10L)
+                .displayOrder(1)
+                .points(100)
+                .build();
+        contestProblemRepository.save(contestProblem);
+
+        shub.smartContest.entity.ContestParticipant participant = shub.smartContest.entity.ContestParticipant.builder()
+                .contestId(contest.getId())
+                .userId(user.getId())
+                .enrolledAt(java.time.LocalDateTime.now())
+                .startedAt(java.time.LocalDateTime.now())
+                .status(shub.smartContest.entity.ContestParticipantStatus.STARTED)
+                .build();
+        contestParticipantRepository.save(participant);
+
         TestCase tc = TestCase.builder()
                 .problemId(10L)
                 .input("5 10")
@@ -107,7 +152,7 @@ public class SubmissionIntegrationTests {
                 .build();
         testCaseRepository.save(tc);
 
-        SubmitRequest request = new SubmitRequest(10L, "public class Main {}", 62);
+        SubmitRequest request = new SubmitRequest(10L, "public class Main {}", 62, contest.getId());
 
         ResponseEntity<SubmitResponse> response = submissionController.submitCode(request);
         assertEquals(HttpStatus.ACCEPTED, response.getStatusCode());
@@ -117,18 +162,30 @@ public class SubmissionIntegrationTests {
     }
 
     @Test
+    @WithMockUser(username = "testuser", roles = "USER")
     void testGetSubmissionResultNotFound() {
+        // First build a user in DB for the mocked session user ID lookup
+        shub.smartContest.entity.User user = shub.smartContest.entity.User.builder()
+                .username("testuser")
+                .email("testuser@example.com")
+                .password("password")
+                .role(shub.smartContest.entity.Role.USER)
+                .enabled(true)
+                .build();
+        userRepository.save(user);
+
         assertThrows(RuntimeException.class, () -> {
             submissionController.getSubmissionResult(99999L);
         });
     }
 
     @Test
+    @WithMockUser(username = "adminuser", roles = "ADMIN")
     void testCreateTestCasesBatch() {
         TestCase tc1 = TestCase.builder().problemId(20L).input("1 2").expectedOutput("3").build();
         TestCase tc2 = TestCase.builder().problemId(20L).input("3 4").expectedOutput("7").build();
         
-        ResponseEntity<List<TestCase>> response = submissionController.createTestCasesBatch(List.of(tc1, tc2));
+        ResponseEntity<List<TestCase>> response = adminTestCaseController.createTestCasesBatch(20L, List.of(tc1, tc2));
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         assertNotNull(response.getBody());
         assertEquals(2, response.getBody().size());
@@ -137,4 +194,3 @@ public class SubmissionIntegrationTests {
         assertEquals(2, saved.size());
     }
 }
-

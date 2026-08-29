@@ -19,6 +19,13 @@ public class Submission {
     @Column(name = "problem_id", nullable = false)
     private Long problemId;
 
+    @Column(name = "user_id", nullable = false)
+    private Long userId;
+
+    @Column(name = "contest_id")
+    private Long contestId;
+
+
     @Column(name = "source_code", columnDefinition = "TEXT", nullable = false)
     private String sourceCode;
 
