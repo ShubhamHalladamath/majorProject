@@ -50,6 +50,8 @@ export default function MobileProctoring() {
       sessionInfoRef.current = res.data;
       if (res.data.status === 'MOBILE_CONNECTED' || res.data.status === 'READY' || res.data.status === 'ACTIVE') {
         setPaired(true);
+        startCamera();
+        startStatusPolling();
       }
     } catch (err) {
       setError(err.response?.data?.message || 'Failed to verify pairing token');
@@ -151,6 +153,8 @@ export default function MobileProctoring() {
       const elapsedMs = startedAt ? Date.now() - new Date(startedAt).getTime() : 0;
       const sequenceNumber = Math.max(1, Math.floor(elapsedMs / CAPTURE_INTERVAL_MS) + 1);
 
+      console.log(`[Mobile Companion] Captured frame #${sequenceNumber}`);
+
       const payload = {
         pairingToken: token,
         deviceType: 'MOBILE',
@@ -181,14 +185,16 @@ export default function MobileProctoring() {
 
     const payload = queue[0];
     try {
+      console.log(`[Mobile Companion] Uploading frame #${payload.sequenceNumber}...`);
       await api.post('/api/proctoring/photo', payload);
+      console.log(`[Mobile Companion] Frame #${payload.sequenceNumber} uploaded successfully!`);
       setUploadStats(prev => ({ ...prev, success: prev.success + 1 }));
       queue.shift(); // Remove uploaded image
       if (queue.length > 0) {
         processQueue(); // Process next in queue
       }
     } catch (err) {
-      console.error('Mobile upload failed, retrying later:', err);
+      console.error(`[Mobile Companion] Upload failed for frame #${payload.sequenceNumber}:`, err);
       setUploadStats(prev => ({ ...prev, failed: prev.failed + 1 }));
     }
   };

@@ -138,6 +138,7 @@ public class ProctoringService {
                         .build();
 
                 imageRepository.save(prImg);
+                System.out.println("[Proctoring Database Log] Saved DEMO photo #" + (i + 1) + " from LAPTOP. Session ID: " + session.getId() + ", Student ID: " + studentId + ", Size: " + imageBytes.length + " bytes");
             } catch (IOException e) {
                 throw new RuntimeException("Failed to save demo image: " + e.getMessage());
             }
@@ -350,6 +351,7 @@ public class ProctoringService {
                     .build();
 
             image = imageRepository.save(image);
+            System.out.println("[Proctoring Database Log] Saved REGULAR photo (Sequence: " + seq + ") from " + deviceType.name() + ". Session ID: " + session.getId() + ", Student ID: " + session.getStudentId() + ", Size: " + imageBytes.length + " bytes");
             session.setPhotoCount(session.getPhotoCount() + 1);
 
             // Create placeholder analysis record

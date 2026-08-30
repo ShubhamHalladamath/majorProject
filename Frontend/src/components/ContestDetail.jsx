@@ -355,6 +355,8 @@ export default function ContestDetail() {
       const elapsedMs = startedAt ? Date.now() - new Date(startedAt).getTime() : 0;
       const sequenceNumber = Math.max(1, Math.floor(elapsedMs / CAPTURE_INTERVAL_MS) + 1);
 
+      console.log(`[Laptop Proctoring] Captured frame #${sequenceNumber}`);
+
       const payload = {
         sessionId: proctoringSessionRef.current.id,
         deviceType: 'LAPTOP',
@@ -384,14 +386,16 @@ export default function ContestDetail() {
 
     const payload = queue[0];
     try {
+      console.log(`[Laptop Proctoring] Uploading frame #${payload.sequenceNumber}...`);
       await api.post('/api/proctoring/photo', payload);
+      console.log(`[Laptop Proctoring] Frame #${payload.sequenceNumber} uploaded successfully!`);
       setUploadStats(prev => ({ ...prev, success: prev.success + 1 }));
       queue.shift();
       if (queue.length > 0) {
         processUploadQueue();
       }
     } catch (err) {
-      console.error('Laptop upload failed, queue retrying:', err);
+      console.error(`[Laptop Proctoring] Upload failed for frame #${payload.sequenceNumber}:`, err);
       setUploadStats(prev => ({ ...prev, failed: prev.failed + 1 }));
     }
   };
