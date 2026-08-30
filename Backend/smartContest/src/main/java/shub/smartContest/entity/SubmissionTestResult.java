@@ -36,4 +36,10 @@ public class SubmissionTestResult {
 
     @Column(columnDefinition = "TEXT")
     private String message;
+
+    @Transient
+    private String input;
+
+    @Transient
+    private String expectedOutput;
 }

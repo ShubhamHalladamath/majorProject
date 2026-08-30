@@ -6,13 +6,13 @@ import shub.smartContest.dto.problem.ContestProblemRequest;
 import shub.smartContest.dto.problem.ContestProblemResponse;
 import shub.smartContest.dto.problem.ProblemRequest;
 import shub.smartContest.dto.problem.ProblemResponse;
-import shub.smartContest.entity.Contest;
 import shub.smartContest.entity.ContestProblem;
 import shub.smartContest.entity.Problem;
 import shub.smartContest.exception.ResourceNotFoundException;
 import shub.smartContest.repository.ContestProblemRepository;
 import shub.smartContest.repository.ContestRepository;
 import shub.smartContest.repository.ProblemRepository;
+import shub.smartContest.repository.TestCaseRepository;
 
 import java.util.List;
 import java.util.stream.Collectors;
@@ -23,13 +23,16 @@ public class ProblemService {
     private final ProblemRepository problemRepository;
     private final ContestProblemRepository contestProblemRepository;
     private final ContestRepository contestRepository;
+    private final TestCaseRepository testCaseRepository;
 
     public ProblemService(ProblemRepository problemRepository,
             ContestProblemRepository contestProblemRepository,
-            ContestRepository contestRepository) {
+            ContestRepository contestRepository,
+            TestCaseRepository testCaseRepository) {
         this.problemRepository = problemRepository;
         this.contestProblemRepository = contestProblemRepository;
         this.contestRepository = contestRepository;
+        this.testCaseRepository = testCaseRepository;
     }
 
     public ProblemResponse createProblem(ProblemRequest request, Long adminId) {
@@ -100,7 +103,7 @@ public class ProblemService {
                 .build();
         ContestProblem saved = contestProblemRepository.save(contestProblem);
 
-        return mapToContestProblemResponse(saved, problem.getTitle(), problem.getDifficulty());
+        return mapToContestProblemResponse(saved, problem);
     }
 
     @Transactional
@@ -118,9 +121,7 @@ public class ProblemService {
         List<ContestProblem> mappings = contestProblemRepository.findByContestIdOrderByDisplayOrderAsc(contestId);
         return mappings.stream().map(mapping -> {
             Problem problem = problemRepository.findById(mapping.getProblemId()).orElse(null);
-            String title = problem != null ? problem.getTitle() : "Unknown";
-            String diff = problem != null ? problem.getDifficulty() : "Unknown";
-            return mapToContestProblemResponse(mapping, title, diff);
+            return mapToContestProblemResponse(mapping, problem);
         }).collect(Collectors.toList());
     }
 
@@ -136,16 +137,48 @@ public class ProblemService {
                 .build();
     }
 
-    private ContestProblemResponse mapToContestProblemResponse(ContestProblem mapping, String title,
-            String difficulty) {
+    private ContestProblemResponse mapToContestProblemResponse(ContestProblem mapping, Problem problem) {
+        if (problem == null) {
+            return ContestProblemResponse.builder()
+                    .id(mapping.getId())
+                    .contestId(mapping.getContestId())
+                    .problemId(mapping.getProblemId())
+                    .title("Unknown")
+                    .difficulty("Unknown")
+                    .displayOrder(mapping.getDisplayOrder())
+                    .points(mapping.getPoints())
+                    .build();
+        }
+
+        List<shub.smartContest.entity.TestCase> testCases = testCaseRepository.findByProblemId(problem.getId());
+        String sampleInput1 = null, sampleOutput1 = null;
+        String sampleInput2 = null, sampleOutput2 = null;
+
+        if (testCases != null && testCases.size() > 0) {
+            sampleInput1 = testCases.get(0).getInput();
+            sampleOutput1 = testCases.get(0).getExpectedOutput();
+        }
+        if (testCases != null && testCases.size() > 1) {
+            sampleInput2 = testCases.get(1).getInput();
+            sampleOutput2 = testCases.get(1).getExpectedOutput();
+        }
+
         return ContestProblemResponse.builder()
                 .id(mapping.getId())
                 .contestId(mapping.getContestId())
                 .problemId(mapping.getProblemId())
-                .title(title)
-                .difficulty(difficulty)
+                .title(problem.getTitle())
+                .difficulty(problem.getDifficulty())
                 .displayOrder(mapping.getDisplayOrder())
                 .points(mapping.getPoints())
+                .description(problem.getDescription())
+                .constraints(problem.getConstraints())
+                .inputFormat(problem.getInputFormat())
+                .outputFormat(problem.getOutputFormat())
+                .sampleInput1(sampleInput1)
+                .sampleOutput1(sampleOutput1)
+                .sampleInput2(sampleInput2)
+                .sampleOutput2(sampleOutput2)
                 .build();
     }
 }

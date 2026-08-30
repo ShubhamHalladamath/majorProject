@@ -60,6 +60,12 @@ public class ContestController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/{contestId}/enrollment")
+    public ResponseEntity<EnrollmentResponse> getEnrollment(@PathVariable Long contestId) {
+        User user = getAuthenticatedUser();
+        return ResponseEntity.ok(enrollmentService.getEnrollment(contestId, user.getId()));
+    }
+
     @GetMapping("/{contestId}/leaderboard")
     public ResponseEntity<List<LeaderboardRow>> getLeaderboard(@PathVariable Long contestId) {
         // Enforce access rules: throws ResourceNotFoundException if draft/hidden

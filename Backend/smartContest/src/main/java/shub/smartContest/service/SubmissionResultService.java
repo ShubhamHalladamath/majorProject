@@ -15,11 +15,14 @@ public class SubmissionResultService {
 
     private final SubmissionRepository submissionRepository;
     private final SubmissionTestResultRepository submissionTestResultRepository;
+    private final shub.smartContest.repository.TestCaseRepository testCaseRepository;
 
     public SubmissionResultService(SubmissionRepository submissionRepository,
-                                   SubmissionTestResultRepository submissionTestResultRepository) {
+                                   SubmissionTestResultRepository submissionTestResultRepository,
+                                   shub.smartContest.repository.TestCaseRepository testCaseRepository) {
         this.submissionRepository = submissionRepository;
         this.submissionTestResultRepository = submissionTestResultRepository;
+        this.testCaseRepository = testCaseRepository;
     }
 
     public SubmissionResultResponse getSubmissionResult(Long submissionId, Long userId, boolean isAdmin) {
@@ -31,6 +34,13 @@ public class SubmissionResultService {
         }
 
         List<SubmissionTestResult> testCaseResults = submissionTestResultRepository.findBySubmissionId(submissionId);
+        for (SubmissionTestResult tr : testCaseResults) {
+            shub.smartContest.entity.TestCase tc = testCaseRepository.findById(tr.getTestCaseId()).orElse(null);
+            if (tc != null) {
+                tr.setInput(tc.getInput());
+                tr.setExpectedOutput(tc.getExpectedOutput());
+            }
+        }
 
         return SubmissionResultResponse.builder()
                 .submissionId(submission.getId())

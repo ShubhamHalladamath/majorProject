@@ -10,8 +10,6 @@ import shub.smartContest.exception.*;
 import shub.smartContest.queue.SubmissionQueueManager;
 import shub.smartContest.repository.*;
 
-import java.util.Optional;
-
 @Service
 public class SubmissionService {
 

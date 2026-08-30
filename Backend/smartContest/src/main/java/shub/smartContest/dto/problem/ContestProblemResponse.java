@@ -14,4 +14,12 @@ public class ContestProblemResponse {
     private String difficulty;
     private Integer displayOrder;
     private Integer points;
+    private String description;
+    private String constraints;
+    private String inputFormat;
+    private String outputFormat;
+    private String sampleInput1;
+    private String sampleOutput1;
+    private String sampleInput2;
+    private String sampleOutput2;
 }
