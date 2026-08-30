@@ -15,6 +15,10 @@ public class TestCaseService {
         this.testCaseRepository = testCaseRepository;
     }
 
+    public List<TestCase> getTestCasesByProblemId(Long problemId) {
+        return testCaseRepository.findByProblemId(problemId);
+    }
+
     public TestCase createTestCase(Long problemId, TestCase testCase) {
         testCase.setProblemId(problemId);
         return testCaseRepository.save(testCase);

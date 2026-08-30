@@ -18,6 +18,12 @@ public class AdminTestCaseController {
         this.testCaseService = testCaseService;
     }
 
+    @GetMapping
+    public ResponseEntity<List<TestCase>> getTestCases(@PathVariable Long problemId) {
+        List<TestCase> response = testCaseService.getTestCasesByProblemId(problemId);
+        return ResponseEntity.ok(response);
+    }
+
     @PostMapping
     public ResponseEntity<TestCase> createTestCase(@PathVariable Long problemId, @RequestBody TestCase testCase) {
         TestCase response = testCaseService.createTestCase(problemId, testCase);

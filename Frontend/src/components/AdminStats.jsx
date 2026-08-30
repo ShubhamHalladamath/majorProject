@@ -14,6 +14,9 @@ export default function AdminStats() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const [submissions, setSubmissions] = useState([]);
+  const [selectedSubmissionCode, setSelectedSubmissionCode] = useState(null);
+
   useEffect(() => {
     fetchContests();
   }, []);
@@ -38,9 +41,18 @@ export default function AdminStats() {
     try {
       const res = await api.get(`/api/admin/contests/${contestId}/statistics`);
       setStats(res.data);
+      
+      try {
+        const subRes = await api.get(`/api/admin/submissions/contest/${contestId}`);
+        setSubmissions(subRes.data);
+      } catch (subErr) {
+        console.error("Failed to fetch submissions for contest", subErr);
+        setSubmissions([]);
+      }
     } catch (err) {
       setError('No live statistics available for this contest.');
       setStats(null);
+      setSubmissions([]);
     } finally {
       setLoading(false);
     }
@@ -162,9 +174,101 @@ export default function AdminStats() {
               <Bar data={getChartData()} options={chartOptions} />
             </div>
           )}
+
+          {/* Submissions Monitor Section */}
+          <div className="glass-card" style={{ marginTop: '1.5rem' }}>
+            <h3 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: '1rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>Live Submissions Monitor</span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)' }}>Total: {submissions.length}</span>
+            </h3>
+            
+            {submissions.length === 0 ? (
+              <div style={{ color: 'var(--text-secondary)', padding: '2rem', textAlign: 'center' }}>
+                No submissions recorded for this contest yet.
+              </div>
+            ) : (
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Competitor</th>
+                      <th>Problem</th>
+                      <th>Status</th>
+                      <th>Passed / Total</th>
+                      <th>Score</th>
+                      <th>Date</th>
+                      <th style={{ textAlign: 'right' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {submissions.map((sub) => (
+                      <tr key={sub.id}>
+                        <td style={{ fontWeight: 600 }}>{sub.username}</td>
+                        <td>{sub.problemTitle}</td>
+                        <td>
+                          <span className={`badge ${
+                            sub.status === 'ACCEPTED' ? 'badge-live' : 'badge-danger'
+                          }`}>
+                            {sub.status}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight: 600, color: 'white' }}>
+                          {sub.passed !== null && sub.total !== null ? `${sub.passed} / ${sub.total}` : 'N/A'}
+                        </td>
+                        <td>{sub.score !== null ? sub.score : 0}</td>
+                        <td style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                          {new Date(sub.createdAt).toLocaleString()}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button 
+                            className="btn btn-secondary" 
+                            style={{ padding: '0.3rem 0.6rem', fontSize: '0.75rem' }} 
+                            onClick={() => setSelectedSubmissionCode(sub)}
+                          >
+                            View Code
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       ) : (
         <div className="glass-card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>Select a contest above to monitor stats.</div>
+      )}
+
+      {/* Code Viewer Modal */}
+      {selectedSubmissionCode && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000, padding: '2rem' }}>
+          <div className="glass-card" style={{ width: '100%', maxWidth: '800px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', padding: '1.5rem', border: '1px solid var(--border-color)', animation: 'slideUp 0.2s ease-out' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem', marginBottom: '1rem' }}>
+              <div>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, margin: 0 }}>
+                  Submission Details - {selectedSubmissionCode.username}
+                </h3>
+                <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                  Problem: <strong style={{ color: 'white' }}>{selectedSubmissionCode.problemTitle}</strong> | Status: <span className={`badge ${selectedSubmissionCode.status === 'ACCEPTED' ? 'badge-live' : 'badge-danger'}`} style={{ fontSize: '0.75rem' }}>{selectedSubmissionCode.status}</span> ({selectedSubmissionCode.passed} / {selectedSubmissionCode.total} passed)
+                </p>
+              </div>
+              <button 
+                className="btn btn-secondary" 
+                style={{ padding: '0.4rem 0.8rem' }} 
+                onClick={() => setSelectedSubmissionCode(null)}
+              >
+                Close
+              </button>
+            </div>
+            
+            <div style={{ flex: 1, overflowY: 'auto', background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '1rem' }}>
+              <pre style={{ margin: 0, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.85rem', color: '#e2e8f0', whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
+                {selectedSubmissionCode.sourceCode}
+              </pre>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
