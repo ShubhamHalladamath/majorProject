@@ -6,6 +6,7 @@ import Register from './components/Register';
 import ContestList from './components/ContestList';
 import ContestDetail from './components/ContestDetail';
 import AdminDashboard from './components/AdminDashboard';
+import MobileProctoring from './components/MobileProctoring';
 
 // Custom security wrapper to protect student and admin sections
 function ProtectedRoute({ children, role }) {
@@ -32,6 +33,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/mobile-proctoring" element={<MobileProctoring />} />
           
           <Route path="/contests" element={
             <ProtectedRoute>

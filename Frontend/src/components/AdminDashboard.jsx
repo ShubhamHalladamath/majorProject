@@ -3,9 +3,10 @@ import { LayoutDashboard, CalendarRange, BookOpen, BarChart3, ShieldCheck } from
 import AdminContestManager from './AdminContestManager';
 import AdminProblemManager from './AdminProblemManager';
 import AdminStats from './AdminStats';
+import AdminProctoringDashboard from './AdminProctoringDashboard';
 
 export default function AdminDashboard() {
-  const [activeSubTab, setActiveSubTab] = useState('contests'); // 'contests' | 'problems' | 'stats'
+  const [activeSubTab, setActiveSubTab] = useState('contests'); // 'contests' | 'problems' | 'stats' | 'proctoring'
 
   return (
     <div className="main-content" style={{ display: 'flex', gap: '2rem', padding: '2rem 1rem' }}>
@@ -39,6 +40,13 @@ export default function AdminDashboard() {
             >
               <BarChart3 size={16} /> Live Statistics
             </button>
+            <button 
+              onClick={() => setActiveSubTab('proctoring')}
+              className={`btn ${activeSubTab === 'proctoring' ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ justifyContent: 'flex-start', border: 'none', background: activeSubTab !== 'proctoring' ? 'transparent' : undefined }}
+            >
+              <ShieldCheck size={16} /> Contest Proctoring
+            </button>
           </div>
         </div>
       </div>
@@ -48,6 +56,7 @@ export default function AdminDashboard() {
         {activeSubTab === 'contests' && <AdminContestManager />}
         {activeSubTab === 'problems' && <AdminProblemManager />}
         {activeSubTab === 'stats' && <AdminStats />}
+        {activeSubTab === 'proctoring' && <AdminProctoringDashboard />}
       </div>
     </div>
   );

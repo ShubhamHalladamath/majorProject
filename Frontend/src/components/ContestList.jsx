@@ -41,14 +41,8 @@ export default function ContestList() {
     }
   };
 
-  const handleStart = async (contestId) => {
-    try {
-      const res = await api.post(`/api/contests/${contestId}/start`);
-      setEnrollments(prev => ({ ...prev, [contestId]: res.data }));
-      navigate(`/contests/${contestId}`);
-    } catch (err) {
-      alert(err.response?.data?.message || 'Failed to start contest');
-    }
+  const handleStart = (contestId) => {
+    navigate(`/contests/${contestId}`);
   };
 
   const getStatusBadge = (status) => {

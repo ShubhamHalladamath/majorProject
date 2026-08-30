@@ -5,9 +5,11 @@ import shub.smartContest.dto.contest.EnrollmentResponse;
 import shub.smartContest.entity.*;
 import shub.smartContest.exception.AlreadyEnrolledException;
 import shub.smartContest.exception.ContestNotActiveException;
+import shub.smartContest.exception.ForbiddenException;
 import shub.smartContest.exception.ResourceNotFoundException;
 import shub.smartContest.repository.ContestParticipantRepository;
 import shub.smartContest.repository.ContestRepository;
+import shub.smartContest.repository.ProctoringSessionRepository;
 
 import java.time.LocalDateTime;
 
@@ -17,13 +19,16 @@ public class EnrollmentService {
     private final ContestParticipantRepository contestParticipantRepository;
     private final ContestRepository contestRepository;
     private final ContestService contestService;
+    private final ProctoringSessionRepository proctoringSessionRepository;
 
     public EnrollmentService(ContestParticipantRepository contestParticipantRepository,
                              ContestRepository contestRepository,
-                             ContestService contestService) {
+                             ContestService contestService,
+                             ProctoringSessionRepository proctoringSessionRepository) {
         this.contestParticipantRepository = contestParticipantRepository;
         this.contestRepository = contestRepository;
         this.contestService = contestService;
+        this.proctoringSessionRepository = proctoringSessionRepository;
     }
 
     public EnrollmentResponse enroll(Long contestId, Long userId) {
@@ -67,6 +72,14 @@ public class EnrollmentService {
 
         if (participant.getStatus() != ContestParticipantStatus.ENROLLED) {
             throw new IllegalArgumentException("Contest has already been started or completed by this user");
+        }
+
+        // Verify proctoring setup is complete
+        ProctoringSession proctoringSession = proctoringSessionRepository.findByContestIdAndStudentId(contestId, userId)
+                .orElseThrow(() -> new ForbiddenException("Proctoring session not found. Please complete camera setup."));
+
+        if (proctoringSession.getStatus() != ProctoringSessionStatus.MOBILE_CONNECTED && proctoringSession.getStatus() != ProctoringSessionStatus.ACTIVE) {
+            throw new ForbiddenException("Proctoring setup is not ready. Current state: " + proctoringSession.getStatus());
         }
 
         participant.setStartedAt(LocalDateTime.now());
