@@ -30,7 +30,7 @@ public class ProctoringImage {
     private Long studentId;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "device_type", nullable = false)
+    @Column(name = "device_type", nullable = false, length = 32)
     private DeviceType deviceType;
 
     @Enumerated(EnumType.STRING)

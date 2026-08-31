@@ -312,7 +312,8 @@ public class ProctoringService {
             throw new ForbiddenException("Session is not active or connected");
         }
 
-        savePhotoMetadata(session, DeviceType.MOBILE, request.getSequenceNumber(), request.getImageBase64(),
+        DeviceType devType = request.getDeviceType() != null ? request.getDeviceType() : DeviceType.MOBILE;
+        savePhotoMetadata(session, devType, request.getSequenceNumber(), request.getImageBase64(),
                 request.getCapturedAt());
         session.setLastMobilePhotoAt(LocalDateTime.now());
         sessionRepository.save(session);
@@ -463,7 +464,7 @@ public class ProctoringService {
             if (img.getCaptureType() == CaptureType.REGULAR) {
                 if (img.getDeviceType() == DeviceType.LAPTOP) {
                     laptopCount++;
-                } else if (img.getDeviceType() == DeviceType.MOBILE) {
+                } else if (img.getDeviceType() == DeviceType.MOBILE || img.getDeviceType() == DeviceType.MOBILE_FRONT || img.getDeviceType() == DeviceType.MOBILE_BACK) {
                     mobileCount++;
                 }
             }

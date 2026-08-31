@@ -32,10 +32,12 @@ export default function MobileProctoring() {
   const isCaptureActiveRef = useRef(false);
   const sessionInfoRef = useRef(null);
 
-  // Helper: return local ISO timestamp string formatted for server storing local device time
+  // Helper: return local ISO timestamp string rounded to 5-second boundary grid (.000 ms)
   const getLocalISOString = (date = new Date()) => {
-    const tzOffset = date.getTimezoneOffset() * 60000;
-    return new Date(date.getTime() - tzOffset).toISOString().slice(0, -1);
+    const roundedMs = Math.round(date.getTime() / CAPTURE_INTERVAL_MS) * CAPTURE_INTERVAL_MS;
+    const roundedDate = new Date(roundedMs);
+    const tzOffset = roundedDate.getTimezoneOffset() * 60000;
+    return new Date(roundedDate.getTime() - tzOffset).toISOString().slice(0, -1);
   };
 
   // Helper: compute ms until the next wall-clock boundary aligned to CAPTURE_INTERVAL_MS grid
@@ -210,9 +212,11 @@ export default function MobileProctoring() {
 
       console.log(`[Mobile Companion] Captured frame #${sequenceNumber}`);
 
+      const mobileDeviceType = facingModeRef.current === 'user' ? 'MOBILE_FRONT' : 'MOBILE_BACK';
+
       const payload = {
         pairingToken: tokenRef.current,
-        deviceType: 'MOBILE',
+        deviceType: mobileDeviceType,
         sequenceNumber,
         capturedAt: getLocalISOString(),
         imageBase64: base64Data
