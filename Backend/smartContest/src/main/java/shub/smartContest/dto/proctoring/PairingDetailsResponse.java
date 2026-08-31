@@ -13,4 +13,5 @@ public class PairingDetailsResponse {
     private Long studentId;
     private String studentUsername;
     private String status;
+    private java.time.LocalDateTime startedAt;
 }

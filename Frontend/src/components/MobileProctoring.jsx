@@ -15,6 +15,16 @@ export default function MobileProctoring() {
   const [proctoringState, setProctoringState] = useState('WAITING'); // 'WAITING' | 'ACTIVE' | 'ENDED'
   const [uploadStats, setUploadStats] = useState({ success: 0, failed: 0 });
 
+  const tokenRef = useRef('');
+  const proctoringStateRef = useRef('WAITING');
+  const facingModeRef = useRef('environment');
+  const streamRef = useRef(null);
+
+  const updateProctoringState = (newState) => {
+    setProctoringState(newState);
+    proctoringStateRef.current = newState;
+  };
+
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const statusIntervalRef = useRef(null);
@@ -33,6 +43,7 @@ export default function MobileProctoring() {
       return;
     }
     setToken(tokenParam);
+    tokenRef.current = tokenParam;
     verifyToken(tokenParam);
 
     return () => {
@@ -76,18 +87,37 @@ export default function MobileProctoring() {
     }
   };
 
-  const startCamera = async () => {
+  const startCamera = async (facingMode = 'environment') => {
     try {
       setCameraStatus('Requesting access...');
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: 'environment' } }, // Prefer back camera
-        audio: false
-      });
+      
+      // Stop existing tracks first
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+        streamRef.current = null;
+      }
+      
+      let stream;
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { exact: facingMode } },
+          audio: false
+        });
+      } catch (e) {
+        // Fallback to ideal if exact is not supported (e.g. laptop or single camera device)
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: facingMode } },
+          audio: false
+        });
+      }
+      
+      streamRef.current = stream;
       setCameraStream(stream);
       setCameraStatus('Ready');
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
       }
+      facingModeRef.current = facingMode;
     } catch (err) {
       setCameraStatus('Error');
       setError('Camera access denied. Please allow camera permissions and refresh.');
@@ -95,25 +125,26 @@ export default function MobileProctoring() {
   };
 
   const stopCamera = () => {
-    if (cameraStream) {
-      cameraStream.getTracks().forEach(track => track.stop());
-      setCameraStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
     }
+    setCameraStream(null);
   };
 
   const startStatusPolling = () => {
     if (statusIntervalRef.current) clearInterval(statusIntervalRef.current);
     statusIntervalRef.current = setInterval(async () => {
       try {
-        const res = await api.get(`/api/proctoring/pair?token=${token}`);
+        const res = await api.get(`/api/proctoring/pair?token=${tokenRef.current}`);
         setSessionInfo(res.data);
         sessionInfoRef.current = res.data;
 
-        if (res.data.status === 'ACTIVE' && proctoringState !== 'ACTIVE') {
-          setProctoringState('ACTIVE');
+        if (res.data.status === 'ACTIVE' && proctoringStateRef.current !== 'ACTIVE') {
+          updateProctoringState('ACTIVE');
           startCaptureLoop();
         } else if (res.data.status === 'ENDED' || res.data.status === 'EXPIRED') {
-          setProctoringState('ENDED');
+          updateProctoringState('ENDED');
           stopCaptureLoop();
         }
       } catch (err) {
@@ -131,10 +162,11 @@ export default function MobileProctoring() {
 
   const stopCaptureLoop = () => {
     if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
+    captureIntervalRef.current = null;
     stopCamera();
   };
 
-  const captureAndUpload = () => {
+  const captureAndUpload = async () => {
     if (!videoRef.current || !canvasRef.current || !sessionInfoRef.current) return;
 
     const video = videoRef.current;
@@ -156,7 +188,7 @@ export default function MobileProctoring() {
       console.log(`[Mobile Companion] Captured frame #${sequenceNumber}`);
 
       const payload = {
-        pairingToken: token,
+        pairingToken: tokenRef.current,
         deviceType: 'MOBILE',
         sequenceNumber,
         capturedAt: new Date().toISOString(),
@@ -164,6 +196,12 @@ export default function MobileProctoring() {
       };
 
       enqueueUpload(payload);
+
+      // Alternating camera for next capture (Front -> Back -> Front ...)
+      const nextFacingMode = facingModeRef.current === 'environment' ? 'user' : 'environment';
+      console.log(`[Mobile Companion] Switching camera to ${nextFacingMode}`);
+      await startCamera(nextFacingMode);
+      
     } catch (err) {
       console.error('Capture failed:', err);
     }

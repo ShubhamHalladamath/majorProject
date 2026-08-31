@@ -72,6 +72,13 @@ export default function ContestDetail() {
     };
   }, [contestId]);
 
+  // Ensure the stream is attached to the video element whenever the video element mounts or state changes
+  useEffect(() => {
+    if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  }, [proctoringState, loading]);
+
   const cleanupAllLoops = () => {
     if (timerRef.current) clearInterval(timerRef.current);
     if (proctoringIntervalRef.current) clearInterval(proctoringIntervalRef.current);
@@ -604,7 +611,7 @@ export default function ContestDetail() {
         </div>
 
         {/* Hidden video & canvas elements for camera captures */}
-        <div style={{ display: 'none' }}>
+        <div style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, overflow: 'hidden', pointerEvents: 'none', left: '-9999px' }}>
           <video ref={videoRef} autoPlay playsInline muted width="320" height="240" />
           <canvas ref={canvasRef} width="320" height="240" />
         </div>

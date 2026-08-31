@@ -193,7 +193,7 @@ export default function AdminProctoringDetails({ sessionId, onBack }) {
                     {pair.laptop ? (
                       <div style={{ width: '100%', height: '220px', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
                         <img 
-                          src={pair.laptop.fileUrl} 
+                          src={`${pair.laptop.fileUrl}?token=${localStorage.getItem('accessToken')}`} 
                           alt="Laptop Capture" 
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />
@@ -221,7 +221,7 @@ export default function AdminProctoringDetails({ sessionId, onBack }) {
                     {pair.mobile ? (
                       <div style={{ width: '100%', height: '220px', borderRadius: '4px', overflow: 'hidden' }}>
                         <img 
-                          src={pair.mobile.fileUrl} 
+                          src={`${pair.mobile.fileUrl}?token=${localStorage.getItem('accessToken')}`} 
                           alt="Mobile Capture" 
                           style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                         />

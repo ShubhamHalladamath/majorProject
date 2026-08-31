@@ -173,6 +173,7 @@ public class ProctoringService {
                 .studentId(student.getId())
                 .studentUsername(student.getUsername())
                 .status(session.getStatus().name())
+                .startedAt(session.getStartedAt())
                 .build();
     }
 
