@@ -89,6 +89,16 @@ public class EnrollmentService {
         return mapToResponse(saved);
     }
 
+    public EnrollmentResponse finishContest(Long contestId, Long userId) {
+        ContestParticipant participant = contestParticipantRepository.findByContestIdAndUserId(contestId, userId)
+                .orElseThrow(() -> new ResourceNotFoundException("User is not enrolled in this contest"));
+
+        participant.setStatus(ContestParticipantStatus.COMPLETED);
+        ContestParticipant saved = contestParticipantRepository.save(participant);
+
+        return mapToResponse(saved);
+    }
+
     public EnrollmentResponse getEnrollment(Long contestId, Long userId) {
         ContestParticipant participant = contestParticipantRepository.findByContestIdAndUserId(contestId, userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User is not enrolled in this contest"));

@@ -60,6 +60,13 @@ public class ContestController {
         return ResponseEntity.ok(response);
     }
 
+    @PostMapping("/{contestId}/finish")
+    public ResponseEntity<EnrollmentResponse> finishContest(@PathVariable Long contestId) {
+        User user = getAuthenticatedUser();
+        EnrollmentResponse response = enrollmentService.finishContest(contestId, user.getId());
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/{contestId}/enrollment")
     public ResponseEntity<EnrollmentResponse> getEnrollment(@PathVariable Long contestId) {
         User user = getAuthenticatedUser();

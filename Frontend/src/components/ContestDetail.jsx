@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link } from 'react-router-dom';
+import { useParams, Link, useNavigate } from 'react-router-dom';
 import QRCode from 'qrcode';
 import { 
   ArrowLeft, Clock, Code, CheckCircle, AlertTriangle, Camera, Laptop, 
-  Smartphone, Monitor, RefreshCw, CheckCircle2, ShieldAlert 
+  Smartphone, Monitor, RefreshCw, CheckCircle2, ShieldAlert, LogOut 
 } from 'lucide-react';
 import api from '../utils/api';
 import CodeEditor from './CodeEditor';
@@ -12,6 +12,7 @@ const CAPTURE_INTERVAL_MS = window.PROCTORING_CAPTURE_INTERVAL_MS || 5000;
 
 export default function ContestDetail() {
   const { contestId } = useParams();
+  const navigate = useNavigate();
   const [contest, setContest] = useState(null);
   const [problems, setProblems] = useState([]);
   const [selectedProblem, setSelectedProblem] = useState(null);
@@ -20,9 +21,13 @@ export default function ContestDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   
+  // Anti-cheat tab switch lock state
+  const [isTabLocked, setIsTabLocked] = useState(false);
+  const [lockReason, setLockReason] = useState('');
+  
   // Proctoring States
   const [proctoringSession, setProctoringSession] = useState(null);
-  const [proctoringState, setProctoringState] = useState('NONE'); // 'NONE' | 'SETUP_INTRO' | 'DEMO_PHOTOS' | 'WAITING_FOR_MOBILE' | 'READY' | 'ACTIVE' | 'ENDED'
+  const [proctoringState, setProctoringState] = useState('NONE'); // 'NONE' | 'SETUP_INTRO' | 'DEMO_PHOTOS' | 'WAITING_FOR_MOBILE' | 'READY' | 'ACTIVE' | 'COMPLETED'
   const [demoPhotos, setDemoPhotos] = useState([]);
   const [cameraStatus, setCameraStatus] = useState('Closed');
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
@@ -55,12 +60,25 @@ export default function ContestDetail() {
     }
   }, [tunnelHost, proctoringSession, proctoringState]);
 
+  // Helper: return local ISO timestamp string formatted for server storing local device time
+  const getLocalISOString = (date = new Date()) => {
+    const tzOffset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - tzOffset).toISOString().slice(0, -1);
+  };
+
+  // Helper: compute ms until the next wall-clock boundary aligned to CAPTURE_INTERVAL_MS grid
+  const msUntilNextBoundary = (intervalMs = CAPTURE_INTERVAL_MS) => {
+    const now = Date.now();
+    return intervalMs - (now % intervalMs);
+  };
+
   // Refs for tracking active intervals and streams
   const timerRef = useRef(null);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const canvasRef = useRef(null);
-  const proctoringIntervalRef = useRef(null);
+  const proctoringTimeoutRef = useRef(null);
+  const isProctoringActiveRef = useRef(false);
   const statusPollIntervalRef = useRef(null);
   const proctoringSessionRef = useRef(null);
   const pendingUploadsRef = useRef([]);
@@ -74,14 +92,17 @@ export default function ContestDetail() {
 
   // Ensure the stream is attached to the video element whenever the video element mounts or state changes
   useEffect(() => {
-    if (videoRef.current && streamRef.current && videoRef.current.srcObject !== streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
+    if (videoRef.current && streamRef.current) {
+      if (videoRef.current.srcObject !== streamRef.current) {
+        videoRef.current.srcObject = streamRef.current;
+      }
+      videoRef.current.play().catch(() => {});
     }
   }, [proctoringState, loading]);
 
   const cleanupAllLoops = () => {
     if (timerRef.current) clearInterval(timerRef.current);
-    if (proctoringIntervalRef.current) clearInterval(proctoringIntervalRef.current);
+    stopProctoringLoop();
     if (statusPollIntervalRef.current) clearInterval(statusPollIntervalRef.current);
     stopCamera();
     removeViolationListeners();
@@ -111,13 +132,37 @@ export default function ContestDetail() {
         const enrollRes = await api.get(`/api/contests/${contestId}/enrollment`);
         setEnrollment(enrollRes.data);
         
+        // Prevent student from entering an already attended/completed contest
+        if (enrollRes.data.status === 'COMPLETED') {
+          setProctoringState('COMPLETED');
+          setTimeRemaining('Completed');
+          return;
+        }
+
         if (enrollRes.data.startedAt) {
-          // Student is returning to an active contest (e.g., page refresh)
+          // Check if existing session was already ended
+          try {
+            const sessionRes = await api.get(`/api/proctoring/session/active?contestId=${contestId}`);
+            if (sessionRes.data.status === 'ENDED' || sessionRes.data.status === 'EXPIRED') {
+              setProctoringState('COMPLETED');
+              setTimeRemaining('Completed');
+              return;
+            }
+          } catch (e) {}
+
           const startMs = new Date(enrollRes.data.startedAt).getTime();
           const durationMs = contestRes.data.duration * 60 * 1000;
           const personalEnd = new Date(startMs + durationMs);
           const absoluteEnd = new Date(contestRes.data.endTime);
           const targetEnd = personalEnd < absoluteEnd ? personalEnd : absoluteEnd;
+          
+          if (Date.now() >= targetEnd.getTime()) {
+            await api.post(`/api/contests/${contestId}/finish`).catch(() => {});
+            setProctoringState('COMPLETED');
+            setTimeRemaining('Completed');
+            return;
+          }
+
           startTimer(targetEnd);
 
           // Restore/Join the active proctoring session
@@ -168,6 +213,11 @@ export default function ContestDetail() {
     try {
       // Fetch active session without resetting its status
       const res = await api.get(`/api/proctoring/session/active?contestId=${contestId}`);
+      if (res.data.status === 'ENDED' || res.data.status === 'EXPIRED') {
+        setProctoringState('COMPLETED');
+        setTimeRemaining('Completed');
+        return;
+      }
       setProctoringSession(res.data);
       proctoringSessionRef.current = res.data;
       setProctoringState('ACTIVE');
@@ -212,6 +262,7 @@ export default function ContestDetail() {
       setCameraStatus('Ready');
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
+        videoRef.current.play().catch(() => {});
       }
     } catch (err) {
       setCameraStatus('Error');
@@ -339,15 +390,38 @@ export default function ContestDetail() {
   };
 
   const startProctoringLoop = () => {
-    if (proctoringIntervalRef.current) clearInterval(proctoringIntervalRef.current);
-    proctoringIntervalRef.current = setInterval(() => {
+    stopProctoringLoop();
+    isProctoringActiveRef.current = true;
+    scheduleNextLaptopCapture();
+  };
+
+  const stopProctoringLoop = () => {
+    isProctoringActiveRef.current = false;
+    if (proctoringTimeoutRef.current) {
+      clearTimeout(proctoringTimeoutRef.current);
+      proctoringTimeoutRef.current = null;
+    }
+  };
+
+  const scheduleNextLaptopCapture = () => {
+    if (!isProctoringActiveRef.current) return;
+    const delay = msUntilNextBoundary(CAPTURE_INTERVAL_MS);
+    proctoringTimeoutRef.current = setTimeout(() => {
       captureAndUploadLaptopPhoto();
-    }, CAPTURE_INTERVAL_MS);
+      scheduleNextLaptopCapture();
+    }, delay);
   };
 
   const captureAndUploadLaptopPhoto = () => {
     if (!videoRef.current || !canvasRef.current || !proctoringSessionRef.current) return;
     const video = videoRef.current;
+    
+    // Check that video track is actively playing before drawing to canvas
+    if (video.readyState < 2 || video.videoWidth === 0) {
+      console.warn('[Laptop Proctoring] Video not ready for snapshot, skipping frame');
+      return;
+    }
+
     const canvas = canvasRef.current;
     const ctx = canvas.getContext('2d');
 
@@ -368,7 +442,7 @@ export default function ContestDetail() {
         sessionId: proctoringSessionRef.current.id,
         deviceType: 'LAPTOP',
         sequenceNumber,
-        capturedAt: new Date().toISOString(),
+        capturedAt: getLocalISOString(),
         imageBase64: base64Data
       };
 
@@ -427,16 +501,18 @@ export default function ContestDetail() {
   };
 
   const handleVisibilityChange = async () => {
-    if (document.visibilityState === 'hidden' && proctoringSessionRef.current) {
+    if (document.visibilityState === 'hidden' && proctoringSessionRef.current && isProctoringActiveRef.current) {
       await logViolation('TAB_SWITCH', 'Student switched browser tab');
-      alert('⚠️ VIOLATION: Tab switching is strictly monitored! Your actions have been logged.');
+      setLockReason('Tab Switch / Window Hide Detected');
+      setIsTabLocked(true);
     }
   };
 
   const handleFullscreenChange = async () => {
-    if (!document.fullscreenElement && proctoringSessionRef.current) {
+    if (!document.fullscreenElement && proctoringSessionRef.current && isProctoringActiveRef.current) {
       await logViolation('EXIT_FULLSCREEN', 'Student exited fullscreen mode');
-      alert('⚠️ VIOLATION: Fullscreen mode is required! Please remain in fullscreen.');
+      setLockReason('Fullscreen Mode Exited');
+      setIsTabLocked(true);
     }
   };
 
@@ -456,8 +532,40 @@ export default function ContestDetail() {
   };
 
   const handleBlur = async () => {
-    if (proctoringSessionRef.current) {
+    if (proctoringSessionRef.current && isProctoringActiveRef.current) {
       await logViolation('TAB_SWITCH', 'Student lost focus on contest window');
+      setLockReason('Window Focus Lost');
+      setIsTabLocked(true);
+    }
+  };
+
+  const handleEndContest = async () => {
+    if (window.confirm('Are you sure you want to submit and end your contest? You will not be able to return to the workspace.')) {
+      await executeEndContest();
+    }
+  };
+
+  const executeEndContest = async () => {
+    try {
+      setLoading(true);
+      if (proctoringSessionRef.current) {
+        await api.post(`/api/proctoring/session/${proctoringSessionRef.current.id}/end`).catch(() => {});
+      }
+      await api.post(`/api/contests/${contestId}/finish`).catch(() => {});
+
+      cleanupAllLoops();
+      
+      if (document.fullscreenElement && document.exitFullscreen) {
+        await document.exitFullscreen().catch(() => {});
+      }
+
+      setIsTabLocked(false);
+      setProctoringState('COMPLETED');
+    } catch (err) {
+      console.error('Failed to end contest:', err);
+      setProctoringState('COMPLETED');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -590,30 +698,60 @@ export default function ContestDetail() {
           </div>
 
           {/* Connection / Proctoring Indicator */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
-              <Laptop size={14} style={{ color: 'var(--color-success)' }} />
-              <span style={{ color: 'var(--text-secondary)' }}>Laptop Feed:</span>
-              <strong style={{ color: 'var(--color-success)' }}>Active</strong>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+            {/* Live Laptop Camera Preview Thumbnail */}
+            <div style={{ width: '100px', height: '62px', borderRadius: 'var(--radius-sm)', overflow: 'hidden', border: '1px solid var(--border-color)', position: 'relative', background: '#000' }}>
+              <video 
+                ref={videoRef} 
+                autoPlay 
+                playsInline 
+                muted 
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+              />
+              <canvas ref={canvasRef} style={{ display: 'none' }} width="320" height="240" />
+              <span style={{ position: 'absolute', bottom: '2px', left: '4px', fontSize: '0.55rem', color: '#4ade80', fontWeight: 700, textShadow: '0 1px 2px rgba(0,0,0,0.8)' }}>
+                ● REC
+              </span>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.85rem' }}>
-              <Smartphone size={14} style={{ color: mobileDisconnected ? 'var(--color-danger)' : 'var(--color-success)' }} />
-              <span style={{ color: 'var(--text-secondary)' }}>Mobile Feed:</span>
-              <strong style={{ color: mobileDisconnected ? 'var(--color-danger)' : 'var(--color-success)' }}>{mobileStatus}</strong>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.25rem 0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
+                <Laptop size={12} style={{ color: 'var(--color-success)' }} />
+                <span style={{ color: 'var(--text-secondary)' }}>Laptop Feed:</span>
+                <strong style={{ color: 'var(--color-success)' }}>Active</strong>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.25rem 0.65rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', fontSize: '0.75rem' }}>
+                <Smartphone size={12} style={{ color: mobileDisconnected ? 'var(--color-danger)' : 'var(--color-success)' }} />
+                <span style={{ color: 'var(--text-secondary)' }}>Mobile Feed:</span>
+                <strong style={{ color: mobileDisconnected ? 'var(--color-danger)' : 'var(--color-success)' }}>{mobileStatus}</strong>
+              </div>
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', background: 'rgba(255,255,255,0.03)', padding: '0.4rem 0.85rem', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)' }}>
               <Clock size={16} style={{ color: 'var(--color-warning)' }} />
               <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--color-warning)' }}>{timeRemaining}</span>
             </div>
-          </div>
-        </div>
 
-        {/* Hidden video & canvas elements for camera captures */}
-        <div style={{ position: 'absolute', width: '1px', height: '1px', opacity: 0, overflow: 'hidden', pointerEvents: 'none', left: '-9999px' }}>
-          <video ref={videoRef} autoPlay playsInline muted width="320" height="240" />
-          <canvas ref={canvasRef} width="320" height="240" />
+            <button 
+              onClick={handleEndContest}
+              style={{
+                padding: '0.4rem 0.9rem',
+                fontSize: '0.8rem',
+                fontWeight: 600,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                background: 'rgba(239, 68, 68, 0.15)',
+                border: '1px solid var(--color-danger)',
+                color: '#f87171',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer'
+              }}
+            >
+              <LogOut size={14} /> End Contest
+            </button>
+          </div>
         </div>
 
         {/* Code Workspace Layout */}
@@ -850,6 +988,110 @@ export default function ContestDetail() {
             <button className="btn btn-primary" onClick={handleStartContestAndWorkspace} style={{ width: '100%', padding: '1rem', fontSize: '1.05rem', fontWeight: 700 }}>
               Start Contest & Enter Workspace
             </button>
+          </div>
+        )}
+
+        {proctoringState === 'COMPLETED' && (
+          <div className="glass-card" style={{ maxWidth: '540px', width: '100%', textAlign: 'center', animation: 'slideUp 0.4s', padding: '2.5rem 2rem' }}>
+            <div style={{ width: '80px', height: '80px', borderRadius: '50%', background: 'rgba(74, 222, 128, 0.1)', border: '2px solid var(--color-success)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.5rem' }}>
+              <CheckCircle2 size={48} style={{ color: 'var(--color-success)' }} />
+            </div>
+
+            <h2 style={{ fontSize: '1.6rem', fontWeight: 700, marginBottom: '0.75rem', color: 'white' }}>
+              Contest Completed
+            </h2>
+            
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', marginBottom: '2rem', lineHeight: '1.6' }}>
+              You have completed and submitted <strong>{contest?.title || 'this contest'}</strong>. Re-entry into the workspace or proctoring session is blocked.
+            </p>
+
+            <div style={{ background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-color)', padding: '1rem 1.25rem', marginBottom: '2rem', textAlign: 'left' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Status:</span>
+                <span style={{ color: 'var(--color-success)', fontWeight: 700 }}>COMPLETED</span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem' }}>
+                <span style={{ color: 'var(--text-secondary)' }}>Proctoring Session:</span>
+                <span style={{ color: 'var(--color-secondary)', fontWeight: 600 }}>ENDED & ARCHIVED</span>
+              </div>
+            </div>
+
+            <button 
+              className="btn btn-primary" 
+              onClick={() => navigate('/contests')}
+              style={{ width: '100%', padding: '0.9rem', fontSize: '1rem', fontWeight: 600 }}
+            >
+              Back to Contests List
+            </button>
+          </div>
+        )}
+
+        {/* Anti-Cheat Tab Switch & Window Blur Lock Screen Overlay */}
+        {isTabLocked && proctoringState === 'ACTIVE' && (
+          <div style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            zIndex: 999999,
+            background: 'rgba(10, 10, 15, 0.92)',
+            backdropFilter: 'blur(12px)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '1.5rem',
+            animation: 'fadeIn 0.25s ease-out'
+          }}>
+            <div className="glass-card" style={{
+              maxWidth: '520px',
+              width: '100%',
+              textAlign: 'center',
+              border: '1px solid var(--color-danger)',
+              boxShadow: '0 0 30px rgba(239, 68, 68, 0.25)',
+              padding: '2.5rem 2rem'
+            }}>
+              <div style={{ width: '70px', height: '70px', borderRadius: '50%', background: 'rgba(239, 68, 68, 0.12)', border: '2px solid var(--color-danger)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1.25rem' }}>
+                <AlertTriangle size={38} style={{ color: 'var(--color-danger)' }} />
+              </div>
+
+              <h3 style={{ color: 'var(--color-danger)', fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.75rem' }}>
+                ⚠️ Contest Workspace Locked
+              </h3>
+
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', lineHeight: '1.6', marginBottom: '1.75rem' }}>
+                A tab switch, window minimize, or full-screen exit was detected ({lockReason}). This action has been recorded in your proctoring audit log.
+                <br /><br />
+                <strong>You must choose to either return to fullscreen or submit your contest now.</strong>
+              </p>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+                <button 
+                  className="btn btn-primary"
+                  onClick={async () => {
+                    try {
+                      if (document.documentElement.requestFullscreen) {
+                        await document.documentElement.requestFullscreen().catch(() => {});
+                      }
+                    } catch (e) {}
+                    setIsTabLocked(false);
+                  }}
+                  style={{ width: '100%', padding: '0.85rem', fontSize: '0.95rem', fontWeight: 700 }}
+                >
+                  ▶ Resume & Return to Fullscreen
+                </button>
+
+                <button 
+                  className="btn btn-danger"
+                  onClick={async () => {
+                    await executeEndContest();
+                  }}
+                  style={{ width: '100%', padding: '0.85rem', fontSize: '0.95rem', fontWeight: 600, background: 'rgba(239, 68, 68, 0.15)', border: '1px solid var(--color-danger)', color: 'var(--color-danger)' }}
+                >
+                  ⏹ Submit & End Contest Now
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

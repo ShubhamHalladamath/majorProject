@@ -28,8 +28,21 @@ export default function MobileProctoring() {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const statusIntervalRef = useRef(null);
-  const captureIntervalRef = useRef(null);
+  const captureTimeoutRef = useRef(null);
+  const isCaptureActiveRef = useRef(false);
   const sessionInfoRef = useRef(null);
+
+  // Helper: return local ISO timestamp string formatted for server storing local device time
+  const getLocalISOString = (date = new Date()) => {
+    const tzOffset = date.getTimezoneOffset() * 60000;
+    return new Date(date.getTime() - tzOffset).toISOString().slice(0, -1);
+  };
+
+  // Helper: compute ms until the next wall-clock boundary aligned to CAPTURE_INTERVAL_MS grid
+  const msUntilNextBoundary = (intervalMs = CAPTURE_INTERVAL_MS) => {
+    const now = Date.now();
+    return intervalMs - (now % intervalMs);
+  };
 
   // Buffer queue for network failures
   const pendingQueueRef = useRef([]);
@@ -47,9 +60,8 @@ export default function MobileProctoring() {
     verifyToken(tokenParam);
 
     return () => {
-      stopCamera();
+      stopCaptureLoop();
       if (statusIntervalRef.current) clearInterval(statusIntervalRef.current);
-      if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
     };
   }, []);
 
@@ -154,16 +166,27 @@ export default function MobileProctoring() {
   };
 
   const startCaptureLoop = () => {
-    if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
-    captureIntervalRef.current = setInterval(() => {
-      captureAndUpload();
-    }, CAPTURE_INTERVAL_MS);
+    stopCaptureLoop();
+    isCaptureActiveRef.current = true;
+    scheduleNextMobileCapture();
   };
 
   const stopCaptureLoop = () => {
-    if (captureIntervalRef.current) clearInterval(captureIntervalRef.current);
-    captureIntervalRef.current = null;
+    isCaptureActiveRef.current = false;
+    if (captureTimeoutRef.current) {
+      clearTimeout(captureTimeoutRef.current);
+      captureTimeoutRef.current = null;
+    }
     stopCamera();
+  };
+
+  const scheduleNextMobileCapture = () => {
+    if (!isCaptureActiveRef.current) return;
+    const delay = msUntilNextBoundary(CAPTURE_INTERVAL_MS);
+    captureTimeoutRef.current = setTimeout(() => {
+      captureAndUpload();
+      scheduleNextMobileCapture();
+    }, delay);
   };
 
   const captureAndUpload = async () => {
@@ -191,7 +214,7 @@ export default function MobileProctoring() {
         pairingToken: tokenRef.current,
         deviceType: 'MOBILE',
         sequenceNumber,
-        capturedAt: new Date().toISOString(),
+        capturedAt: getLocalISOString(),
         imageBase64: base64Data
       };
 

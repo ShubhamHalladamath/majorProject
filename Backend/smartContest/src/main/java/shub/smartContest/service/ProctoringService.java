@@ -28,12 +28,12 @@ public class ProctoringService {
     private final ImageStorageService storageService;
 
     public ProctoringService(ProctoringSessionRepository sessionRepository,
-                             ProctoringImageRepository imageRepository,
-                             ProctoringEventRepository eventRepository,
-                             ProctoringAnalysisRepository analysisRepository,
-                             ContestRepository contestRepository,
-                             UserRepository userRepository,
-                             ImageStorageService storageService) {
+            ProctoringImageRepository imageRepository,
+            ProctoringEventRepository eventRepository,
+            ProctoringAnalysisRepository analysisRepository,
+            ContestRepository contestRepository,
+            UserRepository userRepository,
+            ImageStorageService storageService) {
         this.sessionRepository = sessionRepository;
         this.imageRepository = imageRepository;
         this.eventRepository = eventRepository;
@@ -82,7 +82,8 @@ public class ProctoringService {
     }
 
     /**
-     * Gets the active proctoring session for a student in a contest without resetting it.
+     * Gets the active proctoring session for a student in a contest without
+     * resetting it.
      */
     public ProctoringSessionResponse getActiveSession(Long contestId, Long studentId) {
         ProctoringSession session = sessionRepository.findByContestIdAndStudentId(contestId, studentId)
@@ -121,8 +122,7 @@ public class ProctoringService {
                         session.getId(),
                         "demo",
                         i + 1,
-                        images.get(i)
-                );
+                        images.get(i));
 
                 ProctoringImage prImg = ProctoringImage.builder()
                         .sessionId(session.getId())
@@ -138,7 +138,9 @@ public class ProctoringService {
                         .build();
 
                 imageRepository.save(prImg);
-                System.out.println("[Proctoring Database Log] Saved DEMO photo #" + (i + 1) + " from LAPTOP. Session ID: " + session.getId() + ", Student ID: " + studentId + ", Size: " + imageBytes.length + " bytes");
+                System.out.println("[Proctoring Database Log] Saved DEMO photo #" + (i + 1)
+                        + " from LAPTOP. Session ID: " + session.getId() + ", Student ID: " + studentId + ", Size: "
+                        + imageBytes.length + " bytes");
             } catch (IOException e) {
                 throw new RuntimeException("Failed to save demo image: " + e.getMessage());
             }
@@ -146,7 +148,8 @@ public class ProctoringService {
 
         session.setStatus(ProctoringSessionStatus.WAITING_FOR_MOBILE);
         sessionRepository.save(session);
-        logEvent(session.getId(), studentId, session.getContestId(), "FIVE_DEMO_PHOTOS_COMPLETED", "Completed demo photos");
+        logEvent(session.getId(), studentId, session.getContestId(), "FIVE_DEMO_PHOTOS_COMPLETED",
+                "Completed demo photos");
     }
 
     /**
@@ -156,7 +159,8 @@ public class ProctoringService {
         ProctoringSession session = sessionRepository.findByPairingToken(token)
                 .orElseThrow(() -> new ResourceNotFoundException("Invalid or expired pairing token"));
 
-        if (session.getStatus() == ProctoringSessionStatus.ENDED || session.getStatus() == ProctoringSessionStatus.EXPIRED) {
+        if (session.getStatus() == ProctoringSessionStatus.ENDED
+                || session.getStatus() == ProctoringSessionStatus.EXPIRED) {
             throw new ForbiddenException("Proctoring session has already ended or expired");
         }
 
@@ -184,7 +188,8 @@ public class ProctoringService {
         ProctoringSession session = sessionRepository.findByPairingToken(token)
                 .orElseThrow(() -> new ResourceNotFoundException("Invalid pairing token"));
 
-        if (session.getStatus() == ProctoringSessionStatus.ENDED || session.getStatus() == ProctoringSessionStatus.EXPIRED) {
+        if (session.getStatus() == ProctoringSessionStatus.ENDED
+                || session.getStatus() == ProctoringSessionStatus.EXPIRED) {
             throw new ForbiddenException("Proctoring session has ended or expired");
         }
 
@@ -192,7 +197,8 @@ public class ProctoringService {
         session.setMobileConnectedAt(LocalDateTime.now());
         session = sessionRepository.save(session);
 
-        logEvent(session.getId(), session.getStudentId(), session.getContestId(), "MOBILE_CONNECTED", "Mobile successfully paired");
+        logEvent(session.getId(), session.getStudentId(), session.getContestId(), "MOBILE_CONNECTED",
+                "Mobile successfully paired");
         return mapToResponse(session);
     }
 
@@ -209,7 +215,8 @@ public class ProctoringService {
 
         // Check for mobile disconnection (Active session only)
         if (session.getStatus() == ProctoringSessionStatus.ACTIVE && session.getLastMobilePhotoAt() != null) {
-            long secondsSinceLastMobilePhoto = java.time.Duration.between(session.getLastMobilePhotoAt(), LocalDateTime.now()).getSeconds();
+            long secondsSinceLastMobilePhoto = java.time.Duration
+                    .between(session.getLastMobilePhotoAt(), LocalDateTime.now()).getSeconds();
             if (secondsSinceLastMobilePhoto > 15) {
                 // Check if last event was already mobile disconnect to prevent spam logs
                 List<ProctoringEvent> events = eventRepository.findBySessionIdOrderByEventTimeAsc(sessionId);
@@ -221,7 +228,8 @@ public class ProctoringService {
                     }
                 }
                 if (!alreadyLogged) {
-                    logEvent(sessionId, studentId, session.getContestId(), "MOBILE_DISCONNECTED", "No mobile photos received in 15 seconds");
+                    logEvent(sessionId, studentId, session.getContestId(), "MOBILE_DISCONNECTED",
+                            "No mobile photos received in 15 seconds");
                 }
             }
         }
@@ -244,7 +252,8 @@ public class ProctoringService {
         session.setStartedAt(LocalDateTime.now());
         session = sessionRepository.save(session);
 
-        logEvent(sessionId, studentId, session.getContestId(), "PROCTORING_STARTED", "Contest proctoring session is active");
+        logEvent(sessionId, studentId, session.getContestId(), "PROCTORING_STARTED",
+                "Contest proctoring session is active");
         return mapToResponse(session);
     }
 
@@ -284,7 +293,8 @@ public class ProctoringService {
             throw new ForbiddenException("Session is not active");
         }
 
-        savePhotoMetadata(session, DeviceType.LAPTOP, request.getSequenceNumber(), request.getImageBase64(), request.getCapturedAt());
+        savePhotoMetadata(session, DeviceType.LAPTOP, request.getSequenceNumber(), request.getImageBase64(),
+                request.getCapturedAt());
         session.setLastLaptopPhotoAt(LocalDateTime.now());
         sessionRepository.save(session);
     }
@@ -296,12 +306,14 @@ public class ProctoringService {
         ProctoringSession session = sessionRepository.findByPairingToken(request.getPairingToken())
                 .orElseThrow(() -> new ResourceNotFoundException("Invalid session pairing token"));
 
-        if (session.getStatus() != ProctoringSessionStatus.ACTIVE && session.getStatus() != ProctoringSessionStatus.MOBILE_CONNECTED) {
+        if (session.getStatus() != ProctoringSessionStatus.ACTIVE
+                && session.getStatus() != ProctoringSessionStatus.MOBILE_CONNECTED) {
             // Allow uploads if connected or active
             throw new ForbiddenException("Session is not active or connected");
         }
 
-        savePhotoMetadata(session, DeviceType.MOBILE, request.getSequenceNumber(), request.getImageBase64(), request.getCapturedAt());
+        savePhotoMetadata(session, DeviceType.MOBILE, request.getSequenceNumber(), request.getImageBase64(),
+                request.getCapturedAt());
         session.setLastMobilePhotoAt(LocalDateTime.now());
         sessionRepository.save(session);
     }
@@ -321,7 +333,8 @@ public class ProctoringService {
     }
 
     // Helper: Saves metadata and files to disk
-    private void savePhotoMetadata(ProctoringSession session, DeviceType deviceType, Integer seq, String base64, LocalDateTime capturedAt) {
+    private void savePhotoMetadata(ProctoringSession session, DeviceType deviceType, Integer seq, String base64,
+            LocalDateTime capturedAt) {
         try {
             String base64Str = base64;
             if (base64Str.contains(",")) {
@@ -335,8 +348,7 @@ public class ProctoringService {
                     session.getId(),
                     deviceType.name(),
                     seq,
-                    base64
-            );
+                    base64);
 
             ProctoringImage image = ProctoringImage.builder()
                     .sessionId(session.getId())
@@ -352,7 +364,9 @@ public class ProctoringService {
                     .build();
 
             image = imageRepository.save(image);
-            System.out.println("[Proctoring Database Log] Saved REGULAR photo (Sequence: " + seq + ") from " + deviceType.name() + ". Session ID: " + session.getId() + ", Student ID: " + session.getStudentId() + ", Size: " + imageBytes.length + " bytes");
+            System.out.println("[Proctoring Database Log] Saved REGULAR photo (Sequence: " + seq + ") from "
+                    + deviceType.name() + ". Session ID: " + session.getId() + ", Student ID: " + session.getStudentId()
+                    + ", Size: " + imageBytes.length + " bytes");
             session.setPhotoCount(session.getPhotoCount() + 1);
 
             // Create placeholder analysis record
@@ -381,7 +395,8 @@ public class ProctoringService {
             // Count violations from events
             List<ProctoringEvent> events = eventRepository.findBySessionIdOrderByEventTimeAsc(session.getId());
             long violations = events.stream()
-                    .filter(e -> List.of("TAB_SWITCH", "EXIT_FULLSCREEN", "COPY_ATTEMPT", "CUT_ATTEMPT", "PASTE_ATTEMPT", "MOBILE_DISCONNECTED").contains(e.getEventType()))
+                    .filter(e -> List.of("TAB_SWITCH", "EXIT_FULLSCREEN", "COPY_ATTEMPT", "CUT_ATTEMPT",
+                            "PASTE_ATTEMPT", "MOBILE_DISCONNECTED").contains(e.getEventType()))
                     .count();
 
             // Determine AI overall status based on analyses
@@ -393,8 +408,8 @@ public class ProctoringService {
                 if ("COMPLETED".equals(analysis.getAnalysisStatus())) {
                     hasCompleted = true;
                     if ((analysis.getSuspicionScore() != null && analysis.getSuspicionScore() > 0.5) ||
-                        Boolean.TRUE.equals(analysis.getPhoneDetected()) ||
-                        Boolean.TRUE.equals(analysis.getMultipleFaces())) {
+                            Boolean.TRUE.equals(analysis.getPhoneDetected()) ||
+                            Boolean.TRUE.equals(analysis.getMultipleFaces())) {
                         hasSuspicious = true;
                     }
                 }
